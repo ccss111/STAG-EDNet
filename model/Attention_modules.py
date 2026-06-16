@@ -25,22 +25,3 @@ class AdditiveAttentionForSeq(nn.Module):
         self.attention_weight = attention_weights
         return output, attention_weights
 
-
-# Legacy compatibility: kept for loading historical checkpoints.
-# New training/inference path in train_model.py no longer uses this module.
-class SelfConcatAttentionForSeq(nn.Module):
-    def __init__(self, input_size, attention_size):
-        super(SelfConcatAttentionForSeq, self).__init__()
-        self.attention = nn.Linear(input_size * 2, attention_size)
-        self.linear = nn.Linear(attention_size, 1, bias=False)
-        self.attention_weights = 0
-
-    def forward(self, key, query, values):
-        concat = torch.cat((key, query), dim=-1)
-        scores = torch.tanh(self.attention(concat))
-        scores = (self.linear(scores)).squeeze(-1)
-        attention_weights = torch.softmax(scores, dim=-1)
-        output = torch.bmm(attention_weights.unsqueeze(1), values)
-        self.attention_weights = attention_weights
-        return output, attention_weights
-
