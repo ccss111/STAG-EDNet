@@ -2,13 +2,14 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 import numpy as np
 import pandas as pd
 
 
-AXIS_LABEL_SIZE = 18
-TICK_LABEL_SIZE = 18
-PANEL_LABEL_SIZE = 18
+AXIS_LABEL_SIZE = 20
+TICK_LABEL_SIZE = 20
+PANEL_LABEL_SIZE = 20
 
 
 def _load_prediction_csv(csv_path: Path) -> pd.DataFrame:
@@ -53,8 +54,7 @@ def _plot_single_panel(ax, frame: pd.DataFrame, panel_label: str) -> None:
     )
 
     ax.axhline(0.0, color="#8c8c8c", linewidth=0.8)
-    ax.set_xlabel("Engine Id", fontsize=AXIS_LABEL_SIZE)
-    ax.set_ylabel("RUL(Cycle)", fontsize=AXIS_LABEL_SIZE)
+    # Per-panel axis labels are removed in favor of shared figure-level labels.
     ax.tick_params(axis="both", labelsize=TICK_LABEL_SIZE)
     ax.grid(axis="y", alpha=0.25)
 
@@ -63,15 +63,7 @@ def _plot_single_panel(ax, frame: pd.DataFrame, panel_label: str) -> None:
     ax.set_ylim(min(-30.0, y_min - 5.0), y_max + 8.0)
     ax.set_xlim(0.5, len(engine_idx) + 0.5)
 
-    ax.text(
-        0.5,
-        -0.37,
-        panel_label,
-        transform=ax.transAxes,
-        ha="center",
-        va="top",
-        fontsize=PANEL_LABEL_SIZE,
-    )
+    ax.set_title(panel_label, fontsize=PANEL_LABEL_SIZE, pad=8)
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,11 +104,29 @@ def main() -> None:
 
     frames = [_load_prediction_csv(path) for path in csv_paths]
 
-    fig, axes = plt.subplots(nrows=4, ncols=1, figsize=(11.5, 12.5))
-    for ax, frame, label in zip(axes, frames, panel_labels):
+    # Create a 2x2 grid: TL FD001, TR FD002, BL FD003, BR FD004
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(25, 10))
+    axes_list = [axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]]
+    for idx, (ax, frame, label) in enumerate(zip(axes_list, frames, panel_labels)):
         _plot_single_panel(ax, frame, label)
+        # Restore horizontal reference line at y=-25 for panel 1 (FD001) and panel 4 (FD004)
+        ax.axhline(-25.0, color="#8c8c8c", linewidth=0.8, linestyle="--")
+            # Set major ticks every 25 units for these panels
+        ax.yaxis.set_major_locator(MultipleLocator(25))
 
-    fig.tight_layout(h_pad=1.9)
+    # Hide redundant tick labels: show x tick labels only on bottom row,
+    # and show y tick labels only on left column.
+    for idx, ax in enumerate(axes_list):
+        is_top_row = idx in (0, 1)
+        is_left_col = idx in (0, 2)
+        ax.tick_params(labelbottom=not is_top_row, labelleft=is_left_col)
+
+    # Add shared axis labels for the whole figure
+    fig.text(0.5, 0.02, "Engine Id", ha="center", fontsize=AXIS_LABEL_SIZE)
+    fig.text(0.02, 0.5, "RUL(Cycle)", va="center", rotation="vertical", fontsize=AXIS_LABEL_SIZE)
+
+    # Minimal padding to avoid whitespace
+    fig.tight_layout(pad=1.0, h_pad=1.0, w_pad=0.4, rect=(0.02, 0.03, 0.98, 0.995))
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
