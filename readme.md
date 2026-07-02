@@ -16,7 +16,8 @@ This project provides all the code for data-preprocessing, model construction an
 ├───scipt
 │   ├───parametric_statistics.py
 │   ├───test_model.py
-│   └───train_model.py
+│   ├───train_model.py
+│   ├───train_model_ablation.py
 │   └───....sh
 ├───utils
 │   ├───__init__.py
@@ -48,6 +49,9 @@ It is also possible to modify the running script `.sh` for training.
 ```bash
 cd [parent folder of the project]/CMAPSS-release/scipt/
 python train_model.py
+or
+cd [parent folder of the project]/CMAPSS-release/
+python scipt/train_model.py
 ```
 
 ### Evaluating Models
@@ -56,5 +60,14 @@ If you need to evaluate number of parameters in the model, you can run `paramete
 ```bash
 cd [parent folder of the project]/CMAPSS-release/scipt/
 python parameter statistics.py
+or ...
 ```
 
+
+### Ablation  experiment
+If you need to conduct the ablation experiment, you can run `train_model_ablation.py` in the `scipt/` folder.
+```bash
+cd [parent folder of the project]/CMAPSS-release/scipt/
+python train_model_ablation.py
+or ...
+```

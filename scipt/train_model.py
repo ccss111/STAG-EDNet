@@ -3,7 +3,6 @@ import argparse
 import os
 import sys
 import subprocess
-import re
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -21,149 +20,37 @@ if not os.path.exists(default_log_dir):
 DEFAULT_SEEDS = [2, 17, 27, 30, 33, 51, 62, 80, 88, 97]
 
 
-def _build_log_name(model_code, lr, embed_dim, topk, time_tag):
-    model_code = str(model_code).strip()
-    if not model_code:
-        raise ValueError("--model-code cannot be empty.")
+def _build_log_name(lr, embed_dim, topk, time_tag):
     lr_str = format(float(lr), "g")
-    return (
-        f"{model_code}_学习率+{lr_str}_嵌入模型维度embed+{embed_dim}_"
-        f"topk+{topk}_{time_tag}.log"
+    return f"full_model_学习率+{lr_str}_嵌入模型维度embed+{embed_dim}_topk+{topk}_{time_tag}.log"
+
+
+def _build_full_model(args):
+    encoder = Seq2SeqEncoder(input_size=args.gat_out_dim, num_layers=2, num_hidden=8)
+    decoder = Seq2SeqDecoder(
+        input_size=args.gat_out_dim,
+        num_layers=2,
+        num_hidden=8,
+        seq_len=args.sequence_len,
+        attention_size=args.decoder_attention_size,
+        use_aef=True,
     )
 
-
-ABLATION_CODE_CONFIGS = {
-    'A': {
-        'description': 'KNN graph + GAT-LSTM with encoder and decoder (AEF on)',
-        'overrides': {
-            'model_structure': 'encoderdecoder',
-            'graph_mode': 'dynamic_knn',
-            'use_spatial_gat': True,
-            'use_decoder': True,
-            'use_aef': True,
-        },
-    },
-    'B': {
-        'description': 'Full-connected graph + GAT-LSTM with encoder and decoder (AEF on)',
-        'overrides': {
-            'model_structure': 'encoderdecoder',
-            'graph_mode': 'dynamic_knn',
-            'use_spatial_gat': True,
-            'use_decoder': True,
-            'use_aef': True,
-        },
-    },
-    'C': {
-        'description': 'KNN graph + GAT-LSTM with encoder only (no decoder)',
-        'overrides': {
-            'model_structure': 'encoderdecoder',
-            'graph_mode': 'dynamic_knn',
-            'use_spatial_gat': True,
-            'use_decoder': False,
-            'use_aef': False,
-        },
-    },
-    'D': {
-        'description': 'Original GAT-LSTM without encoder and decoder',
-        'overrides': {
-            'model_structure': 'original',
-            'graph_mode': 'path',
-            'use_aef': False,
-        },
-    },
-}
-
-
-def _extract_ablation_code(model_code):
-    code = str(model_code).strip().upper()
-    if code in ABLATION_CODE_CONFIGS:
-        return code
-
-    tokens = [token for token in re.split(r'[^A-Z0-9]+', code) if token]
-    for token in reversed(tokens):
-        if token in ABLATION_CODE_CONFIGS:
-            return token
-
-    return None
-
-
-def _apply_ablation_preset_from_code(args, model_code):
-    ablation_code = _extract_ablation_code(model_code)
-    if ablation_code is None:
-        return None
-
-    preset = ABLATION_CODE_CONFIGS[ablation_code]
-    for key, value in preset['overrides'].items():
-        setattr(args, key, value)
-
-    if ablation_code == 'B':
-        # Full-connected sensor graph via dynamic_knn with k=num_sensors.
-        args.gat_topk = int(args.feature_num)
-
-    return ablation_code, preset['description']
-
-
-def _build_model_by_structure(args):
-    model_structure = str(args.model_structure).strip().lower()
-
-    if model_structure == 'encoderdecoder':
-        if not args.use_decoder:
-            args.use_aef = False
-
-        encoder_input_size = args.gat_out_dim if args.use_spatial_gat else args.feature_num
-        encoder = Seq2SeqEncoder(input_size=encoder_input_size, num_layers=2, num_hidden=8)
-
-        decoder = None
-        if args.use_decoder:
-            decoder = Seq2SeqDecoder(
-                input_size=encoder_input_size,
-                num_layers=2,
-                num_hidden=8,
-                seq_len=args.sequence_len,
-                attention_size=args.decoder_attention_size,
-                use_aef=args.use_aef,
-            )
-
-        return EncoderDecoder(
-            encoder=encoder,
-            decoder=decoder,
-            use_spatial_gat=args.use_spatial_gat,
-            graph_mode=args.graph_mode,
-            num_sensors=args.feature_num,
-            gat_hidden_dim=args.gat_hidden_dim,
-            gat_out_dim=args.gat_out_dim,
-            gat_num_layers=args.gat_num_layers,
-            gat_embed_dim=args.gat_embed_dim,
-            gat_topk=args.gat_topk,
-            gat_dropout=args.gat_dropout,
-            gat_alpha=args.gat_alpha,
-            use_decoder=args.use_decoder,
-        )
-
-    if not args.use_spatial_gat:
-        raise ValueError(
-            "--disable-spatial-gat is only supported by encoderdecoder structure. "
-            "lstm/original structures always use graph-enhanced inputs."
-        )
-
-    gat_hidden_dims = [args.gat_hidden_dim, args.gat_out_dim]
-    lstm_hidden_dims = [args.lstm_hidden_dim]
-
-    if model_structure == 'original':
-        return GAT_LSTM_model(
-            num_patch=args.sequence_len,
-            patch_size=args.feature_num,
-            hidden_dim=gat_hidden_dims,
-            lstm_hidden_dim=lstm_hidden_dims,
-            graph_mode=args.graph_mode,
-            embed_dim=args.gat_embed_dim,
-            topk=args.gat_topk,
-            dropout=args.gat_dropout,
-            alpha=args.gat_alpha,
-            return_attention=True,
-        )
-
-    raise ValueError("--model-structure must be one of ['encoderdecoder', 'original']")
+    return EncoderDecoder(
+        encoder=encoder,
+        decoder=decoder,
+        use_spatial_gat=True,
+        graph_mode=args.graph_mode,
+        num_sensors=args.feature_num,
+        gat_hidden_dim=args.gat_hidden_dim,
+        gat_out_dim=args.gat_out_dim,
+        gat_num_layers=args.gat_num_layers,
+        gat_embed_dim=args.gat_embed_dim,
+        gat_topk=args.gat_topk,
+        gat_dropout=args.gat_dropout,
+        gat_alpha=args.gat_alpha,
+        use_decoder=True,
+    )
 
 if __name__ == '__main__':
     current_dir = os.getcwd()  # Get the current directory
@@ -211,47 +98,18 @@ if __name__ == '__main__':
                         help='Graph construction mode for spatial GAT')
     parser.add_argument('--decoder-attention-size', type=int, default=28,
                         help='Hidden size for decoder additive attention')
-    parser.add_argument('--use-aef', dest='use_aef', action='store_true', default=True,
-                        help='Enable AEF additive-attention branch in decoder path')
-    parser.add_argument('--disable-aef', dest='use_aef', action='store_false',
-                        help='Disable AEF and fallback to last encoder step in decoder path')
-    parser.add_argument('--use-decoder', dest='use_decoder', action='store_true', default=True,
-                        help='Use decoder LSTM head for encoderdecoder structure')
-    parser.add_argument('--disable-decoder', dest='use_decoder', action='store_false',help='Disable decoder and use encoder-only regression head')
-
-    parser.add_argument('--apply-code-ablation', dest='apply_code_ablation', action='store_true', default=True,
-                        help='Auto-apply A-D ablation preset from --model-code')
-    parser.add_argument('--disable-code-ablation', dest='apply_code_ablation', action='store_false',
-                        help='Disable auto ablation preset from --model-code')
     parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA training')
     parser.add_argument('--save-model', dest='save_model', action='store_true', default=True,
                         help='save trained models')
     parser.add_argument('--no-save-model', dest='save_model', action='store_false',
                         help='do not save trained models')
-    parser.add_argument('--model-code', type=str, default='A',
-                        help='模型代号，用于日志命名，如 A/B/C/D')
-    parser.add_argument('--model-structure', type=str, default='encoderdecoder',
-                        choices=['encoderdecoder', 'original'],
-                        help='模型结构选择: encoderdecoder / original(=GAT_LSTM_model)')
-    parser.add_argument('--lstm-hidden-dim', type=int, default=8,
-                        help='Hidden size of LSTM for lstm/original structures')
     parser.add_argument('--seed-list', type=int, nargs='+', default=None,
                         help='Override training seeds, e.g. --seed-list 62 80 88 97')
     parser.add_argument('--start-seed', type=int, default=None,
                         help='Start from this seed within the active seed list')
     args = parser.parse_args()
 
-    model_code = str(args.model_code).strip()
-    if not model_code:
-        raise ValueError("--model-code cannot be empty.")
-
-    ablation_preset_info = None
-    if args.apply_code_ablation:
-        ablation_preset_info = _apply_ablation_preset_from_code(args, model_code)
-        if ablation_preset_info is not None:
-            print(f"[Ablation Preset] model-code={model_code} -> {ablation_preset_info[0]}: {ablation_preset_info[1]}")
-
-    run_output_root = os.path.join(default_log_dir, f"{args.sub_dataset}_{model_code}")
+    run_output_root = os.path.join(default_log_dir, args.sub_dataset, "full_model")
     os.makedirs(run_output_root, exist_ok=True)
 
     seed_sequence = list(DEFAULT_SEEDS if args.seed_list is None else args.seed_list)
@@ -278,9 +136,7 @@ if __name__ == '__main__':
                 use_exponential_smoothing=args.use_exponential_smoothing,
                 smooth_rate=args.smooth_rate)
 
-        model = _build_model_by_structure(args)
-
-        model_type = type(model).__name__
+        model = _build_full_model(args)
 
         criterion_train = torch.nn.MSELoss()
         criterion_eval = RMSELoss()
@@ -297,7 +153,6 @@ if __name__ == '__main__':
         time = datetime.datetime.now().strftime("%m%d_%H%M%S")
         run_tag = f"{time}_seed{num}"
         log_file_name = _build_log_name(
-            model_code=model_code,
             lr=args.lr,
             embed_dim=args.gat_embed_dim,
             topk=args.gat_topk,
@@ -313,29 +168,21 @@ if __name__ == '__main__':
             f.write(f"批大小(batch_size): {args.batch_size}\n")
             f.write(f"最大训练轮数(max_epochs): {args.max_epochs}\n")
             f.write(f"随机数种子: {num}\n")
-            f.write(f"模型代号(model_code): {args.model_code}\n")
-            f.write(f"模型结构(model_structure): {args.model_structure}\n")
-            if ablation_preset_info is not None:
-                f.write(f"消融预设(ablation_preset): {ablation_preset_info[0]} - {ablation_preset_info[1]}\n")
+            f.write("模型类型: 完整模型(EncoderDecoder + spatial GAT + decoder + AEF)\n")
             f.write(f"学习率: {args.lr}\n")
             f.write("学习率调度器: step\n")
             f.write(f"Step步长(step_size): {args.step_size}\n")
             f.write(f"Step衰减系数(gamma): {args.gamma}\n")
-            
-            if args.model_structure == 'encoderdecoder':
-                f.write(f"空间GAT: {'开启' if args.use_spatial_gat else '关闭'}\n")
-                f.write(f"是否使用解码器LSTM: {'是' if args.use_decoder else '否'}\n")
-                f.write(f"是否使用AEF: {'是' if args.use_aef else '否'}\n")
-            else:
-                f.write("空间GAT: 由模型内部默认启用\n")
-            if args.model_structure == 'encoderdecoder' and args.use_decoder:
-                f.write(f"Decoder注意力隐层维度: {args.decoder_attention_size}\n")
-            if args.model_structure != 'encoderdecoder' or args.use_spatial_gat:
-                f.write(f"图构建模式(graph_mode): {args.graph_mode}\n")
-                f.write(f"GAT层数(num_layers): {args.gat_num_layers}\n")
-                f.write(f"GAT邻居数(topk): {args.gat_topk}\n")
-                f.write(f"GAT嵌入维度: {args.gat_embed_dim}\n")
-                f.write(f"GAT隐藏层维度: {args.gat_hidden_dim}\n")
+
+            f.write(f"图构建模式(graph_mode): {args.graph_mode}\n")
+            f.write("空间GAT: 开启\n")
+            f.write("是否使用解码器LSTM: 是\n")
+            f.write("是否使用AEF: 是\n")
+            f.write(f"Decoder注意力隐层维度: {args.decoder_attention_size}\n")
+            f.write(f"GAT层数(num_layers): {args.gat_num_layers}\n")
+            f.write(f"GAT邻居数(topk): {args.gat_topk}\n")
+            f.write(f"GAT嵌入维度: {args.gat_embed_dim}\n")
+            f.write(f"GAT隐藏层维度: {args.gat_hidden_dim}\n")
             f.write("------------------------------\n")
 
 
